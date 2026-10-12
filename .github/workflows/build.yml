@@ -11,7 +11,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Unzip project
-        run: unzip -q QBOOL.zip -d proj
+        run: |
+          unzip -q QBOOL.zip -d proj
+          find proj -maxdepth 3 | head -40
+          S=$(find proj -path '*/android/settings.gradle' | head -1)
+          if [ -z "$S" ]; then echo "ERROR: android folder not found inside QBOOL.zip - upload the newest QBOOL.zip"; exit 1; fi
+          echo "ROOT=$(dirname "$(dirname "$S")")" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -30,13 +35,13 @@ jobs:
           gradle-version: 8.9
 
       - name: Build APK
-        working-directory: proj/android
+        working-directory: ${{ env.ROOT }}/android
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Collect
         run: |
           mkdir apk
-          cp proj/android/app/build/outputs/apk/debug/app-debug.apk apk/QBOOL.apk
+          cp $ROOT/android/app/build/outputs/apk/debug/app-debug.apk apk/QBOOL.apk
 
       - uses: actions/upload-artifact@v4
         with:
