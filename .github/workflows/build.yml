@@ -17,14 +17,25 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Find Android project
+        id: find
+        run: |
+          G=$(find . -name gradlew -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$G" ]; then
+            echo "gradlew NOT FOUND. Repo structure:"
+            find . -maxdepth 4 -not -path "./.git/*" | head -n 100
+            exit 1
+          fi
+          echo "Found: $G"
+          echo "dir=$(dirname "$G")" >> "$GITHUB_OUTPUT"
+
       - name: Fix timestamps and clean old native build
         run: |
-          find . -type f -exec touch {} +
-          rm -rf proj/QBOOL-1/android/app/.cxx
-          rm -rf proj/QBOOL-1/android/app/build
+          find . -type f -not -path "./.git/*" -exec touch {} +
+          find . -type d -name .cxx -prune -exec rm -rf {} +
 
       - name: Build APK
-        working-directory: proj/QBOOL-1/android
+        working-directory: ${{ steps.find.outputs.dir }}
         run: |
           chmod +x ./gradlew
           ./gradlew clean assembleDebug --no-daemon
@@ -33,4 +44,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: QBOOL-apk
-          path: proj/QBOOL-1/android/app/build/outputs/apk/debug/*.apk
+          path: "**/build/outputs/apk/debug/*.apk"
