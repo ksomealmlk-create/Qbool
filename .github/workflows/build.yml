@@ -1,49 +1,36 @@
-name: Build Q BOOL APK
+name: android
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  android:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Unzip project
-        run: |
-          unzip -q QBOOL.zip -d proj
-          find proj -maxdepth 3 | head -40
-          S=$(find proj -path '*/android/settings.gradle' | head -1)
-          if [ -z "$S" ]; then echo "ERROR: android folder not found inside QBOOL.zip - upload the newest QBOOL.zip"; exit 1; fi
-          echo "ROOT=$(dirname "$(dirname "$S")")" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: ''
-
-      - name: Install Android SDK / NDK / CMake
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;26.3.11579264"
-
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.9
+
+      - name: Fix timestamps and clean old native build
+        run: |
+          find . -type f -exec touch {} +
+          rm -rf proj/QBOOL-1/android/app/.cxx
+          rm -rf proj/QBOOL-1/android/app/build
 
       - name: Build APK
-        working-directory: ${{ env.ROOT }}/android
-        run: gradle assembleDebug --no-daemon --stacktrace
-
-      - name: Collect
+        working-directory: proj/QBOOL-1/android
         run: |
-          mkdir apk
-          cp $ROOT/android/app/build/outputs/apk/debug/app-debug.apk apk/QBOOL.apk
+          chmod +x ./gradlew
+          ./gradlew clean assembleDebug --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: QBOOL-android
-          path: apk
+          name: QBOOL-apk
+          path: proj/QBOOL-1/android/app/build/outputs/apk/debug/*.apk
