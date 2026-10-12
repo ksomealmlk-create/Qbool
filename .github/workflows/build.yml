@@ -17,6 +17,14 @@ jobs:
           echo "=== STRUCTURE ==="
           find src -not -path "*/.git/*" | head -n 80
 
+      - name: Apply updated files (folder "updates")
+        run: |
+          if [ -d updates ]; then
+            R=$(dirname "$(find src -name CMakeLists.txt | head -n 1)")
+            echo "Project root: $R"
+            cp -rv updates/. "$R"/
+          fi
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
