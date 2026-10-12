@@ -10,6 +10,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Unzip project
+        run: |
+          mkdir -p src
+          unzip -q -o QBOOL.zip -d src
+          echo "Project structure:"
+          find src -maxdepth 4 -not -path "*/.git/*" | head -n 60
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -20,10 +27,9 @@ jobs:
       - name: Find Android project
         id: find
         run: |
-          G=$(find . -name gradlew -not -path "*/node_modules/*" | head -n 1)
+          G=$(find src -name gradlew | head -n 1)
           if [ -z "$G" ]; then
-            echo "gradlew NOT FOUND. Repo structure:"
-            find . -maxdepth 4 -not -path "./.git/*" | head -n 100
+            echo "gradlew NOT FOUND inside the zip"
             exit 1
           fi
           echo "Found: $G"
@@ -31,8 +37,8 @@ jobs:
 
       - name: Fix timestamps and clean old native build
         run: |
-          find . -type f -not -path "./.git/*" -exec touch {} +
-          find . -type d -name .cxx -prune -exec rm -rf {} +
+          find src -type f -exec touch {} +
+          find src -type d -name .cxx -prune -exec rm -rf {} +
 
       - name: Build APK
         working-directory: ${{ steps.find.outputs.dir }}
@@ -44,4 +50,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: QBOOL-apk
-          path: "**/build/outputs/apk/debug/*.apk"
+          path: "src/**/build/outputs/apk/debug/*.apk"
