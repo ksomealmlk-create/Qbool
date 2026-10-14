@@ -15,17 +15,32 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare project (unzip QBOOL.zip if the files are zipped)
+        shell: bash
+        run: |
+          if [ -f CMakeLists.txt ]; then
+            echo "PROJ=." >> "$GITHUB_ENV"
+          else
+            mkdir project
+            cd project
+            cmake -E tar xf ../QBOOL.zip
+            CM=$(find . -maxdepth 3 -name CMakeLists.txt | head -1)
+            echo "PROJ=project/$(dirname "$CM")" >> "$GITHUB_ENV"
+          fi
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: cmake -S "$PROJ" -B "$PROJ/build" -DCMAKE_BUILD_TYPE=Release
       - name: Build
-        run: cmake --build build --config Release
+        shell: bash
+        run: cmake --build "$PROJ/build" --config Release
       - name: Test game logic
-        run: ctest --test-dir build -C Release --output-on-failure
+        shell: bash
+        run: ctest --test-dir "$PROJ/build" -C Release --output-on-failure
       - name: Collect
         shell: bash
         run: |
           mkdir dist
-          cp build/Release/QBOOL.exe dist/
+          cp "$PROJ/build/Release/QBOOL.exe" dist/
       - uses: actions/upload-artifact@v4
         with:
           name: QBOOL-windows
@@ -36,18 +51,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare project (unzip QBOOL.zip if the files are zipped)
+        shell: bash
+        run: |
+          if [ -f CMakeLists.txt ]; then
+            echo "PROJ=." >> "$GITHUB_ENV"
+          else
+            mkdir project
+            cd project
+            cmake -E tar xf ../QBOOL.zip
+            CM=$(find . -maxdepth 3 -name CMakeLists.txt | head -1)
+            echo "PROJ=project/$(dirname "$CM")" >> "$GITHUB_ENV"
+          fi
       - name: Install libraries
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev libwayland-dev libxkbcommon-dev
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S "$PROJ" -B "$PROJ/build" -DCMAKE_BUILD_TYPE=Release
       - name: Build
-        run: cmake --build build -j
+        run: cmake --build "$PROJ/build" -j
       - name: Test game logic
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir "$PROJ/build" --output-on-failure
       - name: Collect
         run: |
           mkdir dist
-          cp build/QBOOL dist/
+          cp "$PROJ/build/QBOOL" dist/
       - uses: actions/upload-artifact@v4
         with:
           name: QBOOL-linux
@@ -58,6 +85,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare project (unzip QBOOL.zip if the files are zipped)
+        shell: bash
+        run: |
+          if [ -f CMakeLists.txt ]; then
+            echo "PROJ=." >> "$GITHUB_ENV"
+          else
+            mkdir project
+            cd project
+            cmake -E tar xf ../QBOOL.zip
+            CM=$(find . -maxdepth 3 -name CMakeLists.txt | head -1)
+            echo "PROJ=project/$(dirname "$CM")" >> "$GITHUB_ENV"
+          fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -69,12 +108,12 @@ jobs:
         with:
           gradle-version: 8.9
       - name: Build APK
-        working-directory: android
+        working-directory: ${{ env.PROJ }}/android
         run: gradle assembleDebug --no-daemon --stacktrace
       - name: Collect
         run: |
           mkdir apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk apk/QBOOL.apk
+          cp "$PROJ/android/app/build/outputs/apk/debug/app-debug.apk" apk/QBOOL.apk
       - uses: actions/upload-artifact@v4
         with:
           name: QBOOL-android
@@ -85,17 +124,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare project (unzip QBOOL.zip if the files are zipped)
+        shell: bash
+        run: |
+          if [ -f CMakeLists.txt ]; then
+            echo "PROJ=." >> "$GITHUB_ENV"
+          else
+            mkdir project
+            cd project
+            cmake -E tar xf ../QBOOL.zip
+            CM=$(find . -maxdepth 3 -name CMakeLists.txt | head -1)
+            echo "PROJ=project/$(dirname "$CM")" >> "$GITHUB_ENV"
+          fi
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 3.1.64
       - name: Configure
-        run: emcmake cmake -S . -B build-web -DPLATFORM=Web -DCMAKE_BUILD_TYPE=Release
+        run: emcmake cmake -S "$PROJ" -B "$PROJ/build-web" -DPLATFORM=Web -DCMAKE_BUILD_TYPE=Release
       - name: Build
-        run: cmake --build build-web
+        run: cmake --build "$PROJ/build-web"
       - name: Collect
         run: |
           mkdir site
-          cp build-web/index.html build-web/index.js build-web/index.wasm site/
+          cp "$PROJ/build-web/index.html" "$PROJ/build-web/index.js" "$PROJ/build-web/index.wasm" site/
       - uses: actions/upload-artifact@v4
         with:
           name: QBOOL-web
