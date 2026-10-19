@@ -13,15 +13,44 @@ jobs:
       - name: Prepare project
         shell: bash
         run: |
+          # Case 1: the project files themselves are in the repo root.
           if [ -f CMakeLists.txt ]; then
             echo "PROJ=." >> "$GITHUB_ENV"
-          else
-            mkdir project
-            cd project
-            cmake -E tar xf ../QBOOL.zip
-            CM=$(find . -maxdepth 3 -name CMakeLists.txt | head -1)
-            echo "PROJ=project/$(dirname "$CM")" >> "$GITHUB_ENV"
+            exit 0
           fi
+          # Case 2: the project is zipped (QBOOL.zip). Unpack every zip found in the repo,
+          # then unpack zips inside zips, so it works even if the whole download was uploaded as-is.
+          mkdir -p project
+          while IFS= read -r z; do
+            echo "Unpacking $z"
+            (cd project && cmake -E tar xf "../$z")
+          done < <(find . -maxdepth 4 -iname '*.zip' -not -path './project/*' -not -path './.git/*')
+          for round in 1 2 3; do
+            found=0
+            while IFS= read -r z; do
+              found=1
+              echo "Unpacking inner $z"
+              (cd "$(dirname "$z")" && cmake -E tar xf "$(basename "$z")") && rm -f "$z"
+            done < <(find project -iname '*.zip')
+            [ "$found" = 1 ] || break
+          done
+          # find the folder that holds CMakeLists.txt (shortest path wins)
+          best=""
+          while IFS= read -r cm; do
+            if [ -z "$best" ] || [ ${#cm} -lt ${#best} ]; then best="$cm"; fi
+          done < <(find project -name CMakeLists.txt)
+          if [ -z "$best" ]; then
+            echo "::error::CMakeLists.txt not found. Upload QBOOL.zip (or the unzipped project files) to the repo root."
+            find . -not -path './.git/*' | head -60
+            exit 1
+          fi
+          PROJ="$(dirname "$best")"
+          if [ ! -d "$PROJ/android" ]; then
+            echo "::error::No android folder inside $PROJ"
+            exit 1
+          fi
+          echo "Project folder: $PROJ"
+          echo "PROJ=$PROJ" >> "$GITHUB_ENV"
       - name: Reset file timestamps
         shell: bash
         run: find "$PROJ" -type f -not -path "*/.git/*" -exec touch {} +
