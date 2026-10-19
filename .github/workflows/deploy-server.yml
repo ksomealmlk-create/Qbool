@@ -11,8 +11,10 @@ jobs:
   deploy:
     name: Test and deploy to Cloudflare
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Check Cloudflare secrets
         env:
@@ -20,30 +22,74 @@ jobs:
           A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ -z "$T" ] || [ -z "$A" ]; then
-            echo "::error::Missing secrets. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in Settings > Secrets and variables > Actions."
+            echo "::error::Missing Cloudflare secrets."
             exit 1
           fi
 
       - name: Unpack the project zip
+        shell: bash
         run: |
+          set -euo pipefail
+          mkdir -p proj
           found=""
-          for z in *.zip; do
-            [ -f "$z" ] || continue
-            if unzip -l "$z" | grep -q "server/wrangler.toml"; then found="$z"; break; fi
-          done
+
+          # Search ZIP files in the repository.
+          while IFS= read -r -d '' z; do
+            if unzip -Z1 "$z" 2>/dev/null |
+               grep -Eq '(^|/)server/wrangler\.toml$'; then
+              found="$z"
+              break
+            fi
+
+            # Extract the outer ZIP to check for nested ZIP files.
+            rm -rf /tmp/qbool-check
+            mkdir -p /tmp/qbool-check
+            unzip -oq "$z" -d /tmp/qbool-check
+
+            while IFS= read -r -d '' inner; do
+              if unzip -Z1 "$inner" 2>/dev/null |
+                 grep -Eq '(^|/)server/wrangler\.toml$'; then
+                found="$inner"
+                break
+              fi
+            done < <(find /tmp/qbool-check -type f -name '*.zip' -print0)
+
+            if [ -n "$found" ]; then
+              break
+            fi
+          done < <(find . -maxdepth 1 -type f -name '*.zip' -print0)
+
           if [ -z "$found" ]; then
-            echo "::error::No zip in the repo contains server/wrangler.toml (upload QBOOL-8.zip as QBOOL.zip)."
+            echo "::error::Could not find server/wrangler.toml in the ZIP files."
+            echo "Check that QBOOL.zip contains the game project and server folder."
             exit 1
           fi
-          echo "Using $found"
-          mkdir proj
-          unzip -q "$found" -d proj
-          dir="$(dirname "$(find proj -path '*/server/wrangler.toml' | head -1)")"
-          echo "SERVER_DIR=$dir" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-node@v4
+          echo "Archive found: $found"
+          unzip -oq "$found" -d proj
+
+          config="$(find proj -type f -path '*/server/wrangler.toml' -print -quit)"
+
+          if [ -z "$config" ]; then
+            echo "::error::server/wrangler.toml not found after extraction."
+            exit 1
+          fi
+
+          server_dir="$(dirname "$config")"
+          echo "SERVER_DIR=$GITHUB_WORKSPACE/$server_dir" >> "$GITHUB_ENV"
+
+          echo "Server directory: $server_dir"
+          test -f "$server_dir/package.json"
+          test -f "$server_dir/wrangler.toml"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Install server dependencies
+        working-directory: ${{ env.SERVER_DIR }}
+        run: npm install
 
       - name: Unit tests
         working-directory: ${{ env.SERVER_DIR }}
@@ -63,6 +109,9 @@ jobs:
           command: deploy
 
       - name: Show the server address
+        if: success()
+        env:
+          URL: ${{ steps.deploy.outputs.deployment-url }}
         run: |
           echo "### Server address" >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ steps.deploy.outputs.deployment-url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "$URL" >> "$GITHUB_STEP_SUMMARY"
