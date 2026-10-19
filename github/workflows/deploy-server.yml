@@ -1,0 +1,68 @@
+name: Deploy online server
+
+on:
+  push:
+    paths:
+      - '*.zip'
+      - '.github/workflows/deploy-server.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Test and deploy to Cloudflare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Cloudflare secrets
+        env:
+          T: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$T" ] || [ -z "$A" ]; then
+            echo "::error::Missing secrets. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Unpack the project zip
+        run: |
+          found=""
+          for z in *.zip; do
+            [ -f "$z" ] || continue
+            if unzip -l "$z" | grep -q "server/wrangler.toml"; then found="$z"; break; fi
+          done
+          if [ -z "$found" ]; then
+            echo "::error::No zip in the repo contains server/wrangler.toml (upload QBOOL-8.zip as QBOOL.zip)."
+            exit 1
+          fi
+          echo "Using $found"
+          mkdir proj
+          unzip -q "$found" -d proj
+          dir="$(dirname "$(find proj -path '*/server/wrangler.toml' | head -1)")"
+          echo "SERVER_DIR=$dir" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Unit tests
+        working-directory: ${{ env.SERVER_DIR }}
+        run: npm test
+
+      - name: Server rules match the C++ game rules
+        working-directory: ${{ env.SERVER_DIR }}
+        run: bash test/parity.sh
+
+      - name: Deploy to Cloudflare
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: ${{ env.SERVER_DIR }}
+          command: deploy
+
+      - name: Show the server address
+        run: |
+          echo "### Server address" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.deploy.outputs.deployment-url }}" >> "$GITHUB_STEP_SUMMARY"
